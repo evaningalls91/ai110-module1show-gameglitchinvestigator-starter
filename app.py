@@ -1,68 +1,14 @@
+import math
 import random
 import streamlit as st
 
-def get_range_for_difficulty(difficulty: str):
-    if difficulty == "Easy":
-        return 1, 20
-    if difficulty == "Normal":
-        return 1, 100
-    if difficulty == "Hard":
-        return 1, 50
-    return 1, 100
-
-
-def parse_guess(raw: str):
-    if raw is None:
-        return False, None, "Enter a guess."
-
-    if raw == "":
-        return False, None, "Enter a guess."
-
-    try:
-        if "." in raw:
-            value = int(float(raw))
-        else:
-            value = int(raw)
-    except Exception:
-        return False, None, "That is not a number."
-
-    return True, value, None
-
-
-def check_guess(guess, secret):
-    if guess == secret:
-        return "Win", "🎉 Correct!"
-
-    try:
-        if guess > secret:
-            return "Too High", "📈 Go HIGHER!"
-        else:
-            return "Too Low", "📉 Go LOWER!"
-    except TypeError:
-        g = str(guess)
-        if g == secret:
-            return "Win", "🎉 Correct!"
-        if g > secret:
-            return "Too High", "📈 Go HIGHER!"
-        return "Too Low", "📉 Go LOWER!"
-
-
-def update_score(current_score: int, outcome: str, attempt_number: int):
-    if outcome == "Win":
-        points = 100 - 10 * (attempt_number + 1)
-        if points < 10:
-            points = 10
-        return current_score + points
-
-    if outcome == "Too High":
-        if attempt_number % 2 == 0:
-            return current_score + 5
-        return current_score - 5
-
-    if outcome == "Too Low":
-        return current_score - 5
-
-    return current_score
+# Fix: "Refactored the game logic out of app.py into logic_utils.py so it can be unit-tested"
+from logic_utils import (
+    check_guess,
+    get_range_for_difficulty,
+    parse_guess,
+    update_score,
+)
 
 st.set_page_config(page_title="Glitchy Guesser", page_icon="🎮")
 
@@ -77,26 +23,45 @@ difficulty = st.sidebar.selectbox(
     index=1,
 )
 
-attempt_limit_map = {
-    "Easy": 6,
-    "Normal": 8,
-    "Hard": 5,
-}
-attempt_limit = attempt_limit_map[difficulty]
-
 low, high = get_range_for_difficulty(difficulty)
+
+# Fix: "Attempt limits were hardcoded (Hard was unwinnable); derive them from the range"
+# A perfect binary-search player needs ceil(log2(N)) guesses to corner any
+# number in a range of N values. We add a buffer so reasonable (imperfect)
+# play can still win.
+GUESS_BUFFER = 2
+optimal_guesses = math.ceil(math.log2(high - low + 1))
+attempt_limit = optimal_guesses + GUESS_BUFFER
 
 st.sidebar.caption(f"Range: {low} to {high}")
 st.sidebar.caption(f"Attempts allowed: {attempt_limit}")
 
+
+# Fix: "New Game left score/status/history stale and drew the secret from 1-100; reset the whole round here"
+def start_new_game():
+    """Reset per-round state for a fresh round using the current difficulty.
+    The per-game score resets; the cumulative total_score carries over."""
+    st.session_state.secret = random.randint(low, high)
+    st.session_state.attempts = 0
+    st.session_state.game_score = 0
+    st.session_state.status = "playing"
+    st.session_state.history = []
+    st.session_state.last_hint = None
+
+
 if "secret" not in st.session_state:
     st.session_state.secret = random.randint(low, high)
 
+# Fix: "attempts started at 1, making 'attempts left' off by one"
 if "attempts" not in st.session_state:
-    st.session_state.attempts = 1
+    st.session_state.attempts = 0
 
-if "score" not in st.session_state:
-    st.session_state.score = 0
+# Fix: "Track the per-game score and the cumulative all-games total separately"
+if "game_score" not in st.session_state:
+    st.session_state.game_score = 0
+
+if "total_score" not in st.session_state:
+    st.session_state.total_score = 0
 
 if "status" not in st.session_state:
     st.session_state.status = "playing"
@@ -104,19 +69,56 @@ if "status" not in st.session_state:
 if "history" not in st.session_state:
     st.session_state.history = []
 
+if "difficulty" not in st.session_state:
+    st.session_state.difficulty = difficulty
+
+if "last_hint" not in st.session_state:
+    st.session_state.last_hint = None
+
+# Fix: "Changing difficulty did nothing mid-game; now it starts a fresh game with the new range"
+if st.session_state.difficulty != difficulty:
+    st.session_state.difficulty = difficulty
+    start_new_game()
+
 st.subheader("Make a guess")
 
-st.info(
-    f"Guess a number between 1 and 100. "
-    f"Attempts left: {attempt_limit - st.session_state.attempts}"
-)
+# Fix: "Banner/debug showed stale state and the debug expander collapsed on every guess; render them in fixed slots filled after the state updates"
+# Reserve fixed slots up front so the banner and debug panel always render at
+# the same position in the layout. Because that position is stable across
+# reruns, the expander keeps its open/closed state instead of collapsing — we
+# just refill the slots with fresh values once the guess has been processed.
+status_slot = st.container()
+debug_slot = st.container()
 
-with st.expander("Developer Debug Info"):
-    st.write("Secret:", st.session_state.secret)
-    st.write("Attempts:", st.session_state.attempts)
-    st.write("Score:", st.session_state.score)
-    st.write("Difficulty:", difficulty)
-    st.write("History:", st.session_state.history)
+
+def render_status_banner():
+    """Show the range and remaining attempts, reflecting the latest state."""
+    # Fix: "Clamp so 'Attempts left' can't display a negative number"
+    attempts_left = max(0, attempt_limit - st.session_state.attempts)
+    # Fix: "Banner hardcoded 'between 1 and 100'; use the actual difficulty range"
+    st.info(
+        f"Guess a number between {low} and {high}. "
+        f"Attempts left: {attempts_left}"
+    )
+
+
+def render_score_summary():
+    """Show this game's score and the cumulative total, side by side."""
+    col_game, col_total = st.columns(2)
+    col_game.metric("This game", st.session_state.game_score)
+    col_total.metric("Total (all games)", st.session_state.total_score)
+
+
+def render_debug_info():
+    """Render current game state, reflecting the latest guess / new game."""
+    with st.expander("Developer Debug Info"):
+        st.write("Secret:", st.session_state.secret)
+        st.write("Attempts:", st.session_state.attempts)
+        st.write("Game score:", st.session_state.game_score)
+        st.write("Total score:", st.session_state.total_score)
+        st.write("Difficulty:", difficulty)
+        st.write("History:", st.session_state.history)
+
 
 raw_guess = st.text_input(
     "Enter your guess:",
@@ -131,61 +133,68 @@ with col2:
 with col3:
     show_hint = st.checkbox("Show hint", value=True)
 
+# Fix: "Show hint now shows/hides the hint immediately on toggle, not only after the next guess"
+# Reserve a fixed slot for the hint so toggling "Show hint" updates it in place,
+# without waiting for the next guess.
+hint_slot = st.container()
+
 if new_game:
-    st.session_state.attempts = 0
-    st.session_state.secret = random.randint(1, 100)
+    start_new_game()
     st.success("New game started.")
     st.rerun()
 
-if st.session_state.status != "playing":
-    if st.session_state.status == "won":
-        st.success("You already won. Start a new game to play again.")
-    else:
-        st.error("Game over. Start a new game to try again.")
-    st.stop()
-
-if submit:
-    st.session_state.attempts += 1
-
+# Fix: "Ignore Submit once the game is over (was still processing guesses after win/loss)"
+if st.session_state.status == "playing" and submit:
     ok, guess_int, err = parse_guess(raw_guess)
 
     if not ok:
-        st.session_state.history.append(raw_guess)
         st.error(err)
     else:
+        # Fix: "Count an attempt only for a valid guess, so invalid input no longer burns one"
+        st.session_state.attempts += 1
         st.session_state.history.append(guess_int)
 
-        if st.session_state.attempts % 2 == 0:
-            secret = str(st.session_state.secret)
-        else:
-            secret = st.session_state.secret
+        # Fix: "Removed the secret->str glitch that corrupted comparisons on even attempts"
+        secret = st.session_state.secret
 
         outcome, message = check_guess(guess_int, secret)
 
-        if show_hint:
-            st.warning(message)
+        # Fix: "Persist the hint so the Show hint checkbox can re-show/hide it on demand"
+        st.session_state.last_hint = message
 
-        st.session_state.score = update_score(
-            current_score=st.session_state.score,
+        st.session_state.game_score = update_score(
+            current_score=st.session_state.game_score,
             outcome=outcome,
             attempt_number=st.session_state.attempts,
         )
 
+        # Fix: "Add the finished game's score to the cumulative total exactly once"
         if outcome == "Win":
             st.balloons()
             st.session_state.status = "won"
-            st.success(
-                f"You won! The secret was {st.session_state.secret}. "
-                f"Final score: {st.session_state.score}"
-            )
-        else:
-            if st.session_state.attempts >= attempt_limit:
-                st.session_state.status = "lost"
-                st.error(
-                    f"Out of attempts! "
-                    f"The secret was {st.session_state.secret}. "
-                    f"Score: {st.session_state.score}"
-                )
+            st.session_state.total_score += st.session_state.game_score
+        elif st.session_state.attempts >= attempt_limit:
+            st.session_state.status = "lost"
+            st.session_state.total_score += st.session_state.game_score
+
+# Fix: "On win/loss, show this game's score and the all-games total as separate values"
+if st.session_state.status == "won":
+    st.success(f"🎉 You won! The secret was {st.session_state.secret}.")
+    render_score_summary()
+    st.caption("Start a new game to play again.")
+elif st.session_state.status == "lost":
+    st.error(f"💥 Out of attempts! The secret was {st.session_state.secret}.")
+    render_score_summary()
+    st.caption("Start a new game to try again.")
+
+# Fill the reserved slots last so they show post-guess state, in place.
+with hint_slot:
+    if show_hint and st.session_state.last_hint:
+        st.warning(st.session_state.last_hint)
+with status_slot:
+    render_status_banner()
+with debug_slot:
+    render_debug_info()
 
 st.divider()
 st.caption("Built by an AI that claims this code is production-ready.")
