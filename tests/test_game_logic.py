@@ -74,10 +74,12 @@ def test_parse_valid_integer():
     assert parse_guess("42") == (True, 42, None)
 
 
-def test_parse_decimal_truncates():
+def test_parse_decimal_rejected():
+    # Only whole numbers are valid; a decimal is not a positive integer.
     ok, value, err = parse_guess("3.9")
-    assert ok is True
-    assert value == 3
+    assert ok is False
+    assert value is None
+    assert err is not None
 
 
 def test_parse_empty_string():
@@ -106,6 +108,54 @@ def test_parse_non_number():
 
 def test_parse_strips_surrounding_whitespace():
     assert parse_guess("  7 ") == (True, 7, None)
+
+
+# =====================================================================
+# Edge cases: only positive integers within the range are valid.
+#   parse_guess now takes an optional (low, high) range and rejects
+#   zero, negatives, and out-of-range values with a clear message.
+# =====================================================================
+
+def test_parse_zero_rejected():
+    ok, value, err = parse_guess("0")
+    assert ok is False
+    assert value is None
+    assert err is not None
+
+
+def test_parse_negative_rejected():
+    ok, value, err = parse_guess("-5")
+    assert ok is False
+    assert value is None
+    assert err is not None
+
+
+def test_parse_within_range_is_valid():
+    assert parse_guess("10", 1, 20) == (True, 10, None)
+
+
+def test_parse_at_range_boundaries_is_valid():
+    assert parse_guess("1", 1, 20) == (True, 1, None)
+    assert parse_guess("20", 1, 20) == (True, 20, None)
+
+
+def test_parse_above_range_rejected():
+    ok, value, err = parse_guess("21", 1, 20)
+    assert ok is False
+    assert value is None
+    assert err is not None
+
+
+def test_parse_below_range_rejected():
+    ok, value, err = parse_guess("0", 1, 20)
+    assert ok is False
+    assert value is None
+    assert err is not None
+
+
+def test_parse_without_range_skips_range_check():
+    # With no range supplied, any positive whole number is accepted.
+    assert parse_guess("999") == (True, 999, None)
 
 
 # =====================================================================

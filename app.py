@@ -145,10 +145,15 @@ if new_game:
 
 # Fix: "Ignore Submit once the game is over (was still processing guesses after win/loss)"
 if st.session_state.status == "playing" and submit:
-    ok, guess_int, err = parse_guess(raw_guess)
+    # Edge cases: only positive integers within the active range are accepted.
+    ok, guess_int, err = parse_guess(raw_guess, low, high)
 
     if not ok:
         st.error(err)
+    elif st.session_state.history and st.session_state.history[-1] == guess_int:
+        # Edge case: ignore an identical back-to-back guess so it isn't logged
+        # again and doesn't burn an attempt.
+        st.warning(f"You just guessed {guess_int}. Try a different number.")
     else:
         # Fix: "Count an attempt only for a valid guess, so invalid input no longer burns one"
         st.session_state.attempts += 1

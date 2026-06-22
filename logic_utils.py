@@ -10,9 +10,13 @@ def get_range_for_difficulty(difficulty: str):
     return 1, 50
 
 
-def parse_guess(raw: str):
+def parse_guess(raw: str, low: int = None, high: int = None):
     """
-    Parse user input into an int guess.
+    Parse and validate user input into an int guess.
+
+    Only positive whole numbers are accepted. When a ``low``/``high`` range is
+    supplied, the guess must also fall within that inclusive range. Any input
+    that fails a check returns a specific, user-facing error message.
 
     Returns: (ok: bool, guess_int: int | None, error_message: str | None)
     """
@@ -20,15 +24,27 @@ def parse_guess(raw: str):
     if raw is None or raw.strip() == "":
         return False, None, "Enter a guess."
 
+    # Fix: "Strip surrounding whitespace so ' 7 ' parses correctly"
+    text = raw.strip()
+
     try:
-        # Fix: "Strip surrounding whitespace so ' 7 ' parses correctly"
-        text = raw.strip()
-        if "." in text:
-            value = int(float(text))
-        else:
-            value = int(text)
-    except Exception:
-        return False, None, "That is not a number."
+        value = int(text)
+    except ValueError:
+        # Edge case: distinguish "3.9" (a number, but not a whole one) from
+        # genuine junk like "abc" so the player gets an actionable message.
+        try:
+            float(text)
+        except ValueError:
+            return False, None, "That is not a number."
+        return False, None, "Enter a whole number — no decimals."
+
+    # Edge case: only positive integers are valid guesses.
+    if value <= 0:
+        return False, None, "Enter a positive whole number (greater than 0)."
+
+    # Edge case: when a range is known, the guess must fall inside it.
+    if low is not None and high is not None and not (low <= value <= high):
+        return False, None, f"Out of range. Guess a number between {low} and {high}."
 
     return True, value, None
 
