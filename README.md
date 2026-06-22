@@ -39,14 +39,23 @@ Describe your fixed game in numbered steps so a reader can follow along without 
 4. Once guesses are exhausted or number is guessed the game is over.
 5. User receives 10 points for a correct guess and negative points for each wrong guess.
 
-**Screenshot** _(optional)_: ![Screenshot](Game Glitch Investigator Finished.PNG)
+**Screenshot** _(optional)_:
+
+![Screenshot](Game%20Glitch%20Investigator%20Finished.png)
 
 ## 🧪 Test Results
 
 ```
 # Paste your pytest output here, e.g.:
 # pytest tests/
-# ========================= X passed in 0.XXs =========================
+======================================================== test session starts ================================================
+platform win32 -- Python 3.14.4, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\Evan\Documents\Game Glitch Investigator
+plugins: anyio-4.13.0
+collected 22 items
+
+ai110-module1show-gameglitchinvestigator-starter\tests\test_game_logic.py ......................
+# ========================= 22 passed in 0.12s =========================
 ```
 
 ## 🚀 Stretch Features
